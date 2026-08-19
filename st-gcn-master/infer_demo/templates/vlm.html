@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VLM 图片分类 · CPR 动作评估</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ range(1,99999)|random }}">
+<style>
+  /* VLM 页面专属样式 */
+  .vlm-layout { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
+  @media (max-width: 980px) { .vlm-layout { grid-template-columns: 1fr; } }
+
+  .vlm-preview-wrap {
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+    min-height: 300px; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+  }
+  .vlm-preview-wrap img { max-width: 100%; max-height: 600px; object-fit: contain; border-radius: 8px; }
+  .vlm-preview-empty { color: var(--fg-2); font-size: 14px; text-align: center; }
+  .vlm-preview-empty .icon { font-size: 48px; display: block; margin-bottom: 12px; }
+
+  .vlm-result { display: flex; flex-direction: column; gap: 16px; }
+
+  .result-hero {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; display: flex; align-items: center; gap: 20px;
+  }
+  .result-hero.error { border-color: var(--bad); background: rgba(249,117,131,0.08); }
+  .result-hero.loading { border-color: var(--warn); }
+
+  .result-class-icon { font-size: 40px; }
+  .result-class-name { font-size: 22px; font-weight: 700; color: var(--fg); }
+  .result-class-meta { font-size: 12px; color: var(--fg-2); margin-top: 4px; }
+
+  .conf-badge {
+    display: inline-block; padding: 3px 12px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; margin-left: 8px;
+  }
+  .conf-high { background: rgba(86,211,100,0.15); color: var(--good); border: 1px solid rgba(86,211,100,0.3); }
+  .conf-medium { background: rgba(255,158,61,0.15); color: var(--warn); border: 1px solid rgba(255,158,61,0.3); }
+  .conf-low { background: rgba(249,117,131,0.15); color: var(--bad); border: 1px solid rgba(249,117,131,0.3); }
+
+  .result-reasoning {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px;
+  }
+  .result-reasoning h3 { margin-bottom: 10px; }
+  .result-reasoning p { color: var(--fg-1); line-height: 1.7; font-size: 13px; }
+
+  .result-features {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px;
+  }
+  .feature-list { list-style: none; }
+  .feature-list li {
+    padding: 6px 0; color: var(--fg-1); font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  .feature-list li:last-child { border-bottom: none; }
+  .feature-list li::before { content: "▸ "; color: var(--primary); }
+
+  .spinner {
+    width: 20px; height: 20px; border: 3px solid var(--border);
+    border-top-color: var(--primary); border-radius: 50%;
+    animation: spin 0.8s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .class-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .class-chip {
+    padding: 8px 10px; border-radius: 8px; font-size: 12px;
+    background: var(--bg-2); border: 1px solid var(--border);
+    color: var(--fg-2); text-align: center; transition: all 0.2s;
+  }
+  .class-chip.active {
+    background: rgba(88,166,255,0.12); border-color: var(--primary);
+    color: var(--primary); font-weight: 600;
+  }
+
+  .raw-toggle { margin-top: 8px; }
+  .raw-toggle summary { cursor: pointer; color: var(--fg-2); font-size: 12px; }
+  .raw-content {
+    margin-top: 8px; padding: 12px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-family: "Cascadia Code", "Fira Code", monospace; font-size: 12px;
+    color: var(--fg-2); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🔍</div>
+      <div>
+        <div class="title">VLM 图片分类 · CPR 动作评估</div>
+        <div class="subtitle">Ollama qwen3-vl:2b · 9 类空间姿态分类 · 单帧分析</div>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <div class="mode-tabs">
+        <a href="/" class="mode-tab">离线检测</a>
+        <a href="/live" class="mode-tab">实时检测</a>
+        <a href="/vlm" class="mode-tab active">VLM 评估</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="vlm-layout">
+    <!-- 左侧：上传 -->
+    <aside class="panel">
+      <section class="card">
+        <h3>选择图片</h3>
+        <div class="dropzone" id="vlm-dropzone">
+          <input type="file" id="vlm-file" hidden accept="image/jpeg,image/png,image/bmp,image/jpg,.jpg,.jpeg,.png,.bmp">
+          <div class="dropzone-content">
+            <div class="dropzone-icon">🖼️</div>
+            <div class="dropzone-title">点击或拖拽图片到此处</div>
+            <div class="dropzone-hint">支持 jpg / png / bmp</div>
+          </div>
+        </div>
+      </section>
+
+      <button type="button" class="primary" id="vlm-submit" disabled>
+        <span class="btn-text">🔍 开始 VLM 分析</span>
+      </button>
+
+      <section class="card">
+        <h3>9 类分类标准</h3>
+        <div class="class-grid" id="class-grid">
+          <div class="class-chip" data-idx="0">0 正确动作</div>
+          <div class="class-chip" data-idx="1">1 双手重叠</div>
+          <div class="class-chip" data-idx="2">2 握拳按压</div>
+          <div class="class-chip" data-idx="3">3 单手按压</div>
+          <div class="class-chip" data-idx="4">4 手臂弯曲</div>
+          <div class="class-chip" data-idx="5">5 手臂倾斜</div>
+          <div class="class-chip" data-idx="6">6 蹲姿按压</div>
+          <div class="class-chip" data-idx="7">7 站立按压</div>
+          <div class="class-chip" data-idx="8">8 位置偏移</div>
+        </div>
+        <p style="margin-top:12px; font-size:11px; color:var(--fg-2);">
+          单帧可判的 9 类（原始 14 类中排除时序类：跳跃/按压不足/频率过慢/按压过度/随机位置）
+        </p>
+      </section>
+
+      <section class="card">
+        <h3>模型信息</h3>
+        <div style="font-size:12px; color:var(--fg-2); line-height:1.8;">
+          <div>模型: <span style="color:var(--fg-1);">qwen3-vl:2b</span></div>
+          <div>引擎: <span style="color:var(--fg-1);">Ollama (本地)</span></div>
+          <div>提示词: <span style="color:var(--fg-1);">9 类 CPR 空间姿态标准</span></div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- 右侧：预览 + 结果 -->
+    <section class="main-area">
+      <!-- 图片预览 -->
+      <section class="card">
+        <div class="card-head">
+          <h3>图片预览</h3>
+          <span class="badge" id="img-meta"></span>
+        </div>
+        <div class="vlm-preview-wrap" id="vlm-preview-wrap">
+          <div class="vlm-preview-empty">
+            <span class="icon">🖼️</span>
+            请先在左侧选择一张 CPR 按压图片
+          </div>
+        </div>
+      </section>
+
+      <!-- VLM 结果 -->
+      <div class="vlm-result" id="vlm-result" style="display:none;">
+        <!-- 预测类别 -->
+        <div class="result-hero" id="result-hero">
+          <div class="result-class-icon" id="result-icon">⏳</div>
+          <div style="flex:1;">
+            <div class="result-class-name" id="result-class-name">分析中...</div>
+            <div class="result-class-meta" id="result-class-meta"></div>
+          </div>
+          <span class="conf-badge" id="result-conf"></span>
+        </div>
+
+        <!-- 推理理由 -->
+        <div class="result-reasoning" id="result-reasoning-card">
+          <h3>判断依据</h3>
+          <p id="result-reasoning-text"></p>
+        </div>
+
+        <!-- 可观察特征 -->
+        <div class="result-features" id="result-features-card">
+          <h3>可观察特征</h3>
+          <ul class="feature-list" id="result-feature-list"></ul>
+        </div>
+
+        <!-- 原始输出 -->
+        <details class="raw-toggle">
+          <summary>查看模型原始输出</summary>
+          <div class="raw-content" id="result-raw"></div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Ollama qwen3-vl:2b · 9 类 CPR 空间姿态分类 · 单帧分析 · 与 ST-GCN 管线独立</small>
+  </footer>
+
+  <script src="{{ url_for('static', filename='vlm.js') }}?v={{ range(1,99999)|random }}"></script>
+</body>
+</html>

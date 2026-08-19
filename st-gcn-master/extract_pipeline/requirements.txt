@@ -1,0 +1,11 @@
+# ST-GCN 骨架数据提取 —— 服务器环境依赖
+# 安装：python -m pip install -r requirements.txt
+# 注意：torch 的版本要和服务器是否有 GPU / CUDA 匹配，见 README_server.md
+
+# Python 3.8 兼容性说明：
+#   ultralytics>=8.4.75 官方支持 3.8；torch 2.0~2.4 支持 3.8（pip 在 3.8 上会自动选到 2.4.x）；
+#   numpy 2.0 起要求 3.9+，所以这里锁 <2。能用 3.10/3.11 更佳。
+numpy>=1.23,<2
+opencv-python-headless>=4.7      # 服务器无界面，用 headless 版即可（VideoCapture 正常）
+ultralytics>=8.4.75              # 必须 >= 8.4.x，因为模型是 YOLO26-pose
+torch>=2.0                       # 有 GPU 的服务器请装对应 CUDA 版的 torch（见说明）

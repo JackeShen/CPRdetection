@@ -1,0 +1,3 @@
+conda activate oldshen
+cd C:\Users\11137\Desktop\shixi\CPROldshen\st-gcn-master
+python tools/yolo2stgcn.py --video_root ./mydata --model ../ultralytics-main/pose/yolo26m-pose.pt --out ./data/my_dataset --device 0 --max_frame 300 --num_person 2 --val_ratio 0.2

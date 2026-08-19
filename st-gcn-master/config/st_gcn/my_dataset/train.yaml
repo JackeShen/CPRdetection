@@ -1,0 +1,34 @@
+work_dir: ./work_dir/recognition/my_dataset/ST_GCN0.001
+
+# feeder
+feeder: feeder.feeder.Feeder
+train_feeder_args:
+  random_choose: True
+  random_move: True
+  window_size: 150
+  data_path: ./data/my_dataset/out/train_data.npy
+  label_path: ./data/my_dataset/out/train_label.pkl
+test_feeder_args:
+  data_path: ./data/my_dataset/out/val_data.npy
+  label_path: ./data/my_dataset/out/val_label.pkl
+
+# model
+model: net.st_gcn.Model
+model_args:
+  in_channels: 3
+  num_class: 14
+  edge_importance_weighting: True
+  graph_args:
+    layout: 'openpose'
+    strategy: 'spatial'
+
+# training
+device: [0]
+batch_size: 14          # 84 train samples / 14 = 6 batches, no drop (train loader drop_last=True)
+test_batch_size: 28
+num_worker: 0           # avoid DataLoader multiprocessing issue on Windows
+
+# optim
+base_lr: 0.01
+step: [20, 40]
+num_epoch: 50

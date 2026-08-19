@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YOLO + ST-GCN 动作识别 · WebUI</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🧠</div>
+      <div>
+        <div class="title">YOLO + ST-GCN 动作识别</div>
+        <div class="subtitle">14 类 CPR 动作 · 基于 OpenPose 18 点骨架 · 训练于 SupC14</div>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <div class="mode-tabs">
+        <a href="/" class="mode-tab active">离线检测</a>
+        <a href="/live" class="mode-tab">实时检测</a>
+        <a href="/vlm" class="mode-tab">VLM 评估</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 左侧：控制面板 -->
+    <aside class="panel">
+      <section class="card">
+        <h3>输入源</h3>
+        <div class="tabs">
+          <button type="button" class="tab active" data-tab="path">服务器路径</button>
+          <button type="button" class="tab" data-tab="upload">上传文件</button>
+        </div>
+        <div class="tab-panel" id="tab-path">
+          <input type="text" name="source_path" id="source_path" class="input"
+                 placeholder="绝对路径，如 D:\\clips\\demo.mp4">
+        </div>
+        <div class="tab-panel hidden" id="tab-upload">
+          <div class="dropzone" id="dropzone">
+            <input type="file" name="file" id="file" hidden
+                   accept=".mp4,.avi,.mov,.mkv,.wmv,.flv,.m4v">
+            <div class="dropzone-content">
+              <div class="dropzone-icon">📁</div>
+              <div class="dropzone-title">点击或拖拽视频到此处</div>
+              <div class="dropzone-hint">支持 mp4 / avi / mov / mkv</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <details>
+          <summary>高级参数</summary>
+          <div class="form">
+            <label>ST-GCN 权重 <input type="text" name="stgcn_model" value="{{ defaults.stgcn_model }}" class="input"></label>
+            <label>YOLO 权重  <input type="text" name="yolo_model" value="{{ defaults.yolo_model }}" class="input"></label>
+            <label>label_map  <input type="text" name="label_map" value="{{ defaults.label_map }}" class="input"></label>
+            <div class="form-row">
+              <label>device <input type="text" name="device" value="{{ defaults.device }}" class="input"></label>
+              <label>topk <input type="number" name="topk" value="{{ defaults.topk }}" min="1" max="14" class="input"></label>
+            </div>
+            <div class="form-row">
+              <label>max_frame <input type="number" name="max_frame" value="{{ defaults.max_frame }}" class="input"></label>
+              <label>imgsz <input type="number" name="imgsz" value="{{ defaults.imgsz }}" class="input"></label>
+            </div>
+            <div class="form-row">
+              <label>conf <input type="number" step="0.05" name="conf" value="{{ defaults.conf }}" class="input"></label>
+              <label>select
+                <select name="select" class="input">
+                  <option value="cpr" {% if defaults.select == 'cpr' %}selected{% endif %}>cpr</option>
+                  <option value="top_conf" {% if defaults.select == 'top_conf' %}selected{% endif %}>top_conf</option>
+                </select>
+              </label>
+            </div>
+            <label>num_person <input type="number" name="num_person" value="{{ defaults.num_person }}" min="1" max="2" class="input"></label>
+
+            <!-- 推理方法选择：ST-GCN / KNN(k=1) / 综合 -->
+            <div class="knn-block">
+              <label class="toggle-row">推理方法</label>
+              <div class="method-options">
+                <label class="method-pick">
+                  <input type="radio" name="method" value="stgcn"
+                         {% if defaults.method == 'stgcn' %}checked{% endif %}>
+                  <div>
+                    <div class="method-name">ST-GCN</div>
+                    <div class="method-desc">原模型 softmax 前向<br><span class="muted">val 35.7%</span></div>
+                  </div>
+                </label>
+                <label class="method-pick">
+                  <input type="radio" name="method" value="knn"
+                         {% if defaults.method == 'knn' %}checked{% endif %}>
+                  <div>
+                    <div class="method-name">KNN k=<span id="knn-k-display">{{ defaults.knn_k }}</span></div>
+                    <div class="method-desc">骨架距离模板匹配<br><span class="muted">val 50.0% (推荐)</span></div>
+                  </div>
+                </label>
+                <label class="method-pick">
+                  <input type="radio" name="method" value="both"
+                         {% if defaults.method == 'both' %}checked{% endif %}>
+                  <div>
+                    <div class="method-name">综合</div>
+                    <div class="method-desc">ST-GCN + KNN 投票<br><span class="muted">取置信度高的方法</span></div>
+                  </div>
+                </label>
+              </div>
+              <div class="knn-opts" id="knn-opts">
+                <label>k 邻居数 <input type="number" name="knn_k" value="{{ defaults.knn_k }}" min="1" max="21" class="input"
+                  oninput="document.getElementById('knn-k-display').textContent=this.value"></label>
+                <label>训练张量 <input type="text" name="train_data" value="{{ defaults.train_data }}" class="input" placeholder="train_data.npy"></label>
+                <label>训练标签 <input type="text" name="train_label" value="{{ defaults.train_label }}" class="input" placeholder="train_label.pkl"></label>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <button type="button" class="primary" id="submit-btn">
+        <span class="btn-text">▶ 提交检测</span>
+      </button>
+
+      <section class="card">
+        <h3>历史任务</h3>
+        <ul id="history-list" class="history">
+          <li class="history-empty">暂无历史任务</li>
+        </ul>
+      </section>
+    </aside>
+
+    <!-- 右侧：结果视图 -->
+    <section class="main-area">
+      <!-- 阶段指示器 -->
+      <div class="steps" id="steps">
+        <div class="step" data-step="1"><span class="step-num">1</span><span class="step-name">加载 YOLO</span></div>
+        <div class="step-divider"></div>
+        <div class="step" data-step="2"><span class="step-num">2</span><span class="step-name">加载 ST-GCN</span></div>
+        <div class="step-divider"></div>
+        <div class="step" data-step="3"><span class="step-num">3</span><span class="step-name">提取骨架</span></div>
+        <div class="step-divider"></div>
+        <div class="step" data-step="4"><span class="step-num">4</span><span class="step-name">动作分类</span></div>
+      </div>
+
+      <div class="card empty-state" id="placeholder">
+        <div class="placeholder-content">
+          <div class="placeholder-icon">🎬</div>
+          <div class="placeholder-title">准备就绪</div>
+          <div class="placeholder-hint">选择视频或文件夹后点击「提交检测」开始推理</div>
+        </div>
+      </div>
+
+      <!-- 视频对比 -->
+      <section class="card hidden" id="video-card">
+        <div class="card-head">
+          <h3>视频对比</h3>
+          <span class="badge" id="video-meta"></span>
+        </div>
+        <div class="video-grid">
+          <div class="video-cell">
+            <div class="video-label">原始输入</div>
+            <div class="video-frame">
+              <img id="original-img" alt="原始图片（图片序列模式下显示关键帧）">
+              <video id="original-vid" controls muted loop></video>
+            </div>
+          </div>
+          <div class="video-cell">
+            <div class="video-label"><span class="dot"></span>Top-1 标注</div>
+            <div class="video-frame">
+              <video id="annotated-video" controls muted loop autoplay></video>
+            </div>
+            <div class="video-overlay" id="video-overlay"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 14 类全概率柱状图 -->
+      <section class="card hidden" id="probs-card">
+        <div class="card-head">
+          <h3>14 类概率分布</h3>
+          <span class="badge" id="top1-badge"></span>
+        </div>
+        <div class="method-compare hidden" id="method-compare">
+          <div class="cmp-cell">
+            <div class="cmp-label">ST-GCN</div>
+            <div class="cmp-val stgcn" id="cmp-stgcn-name">—</div>
+            <div class="cmp-conf" id="cmp-stgcn-conf">—</div>
+          </div>
+          <div class="cmp-cell">
+            <div class="cmp-label">KNN</div>
+            <div class="cmp-val knn" id="cmp-knn-name">—</div>
+            <div class="cmp-conf" id="cmp-knn-conf">—</div>
+          </div>
+        </div>
+        <div class="probs-chart" id="probs-chart"></div>
+      </section>
+
+      <!-- 骨架可视化 -->
+      <section class="card hidden" id="skel-card">
+        <div class="card-head">
+          <h3>骨架可视化（5 个采样帧）</h3>
+          <div class="seg" id="frame-seg"></div>
+        </div>
+        <div class="skel-grid" id="skel-grid"></div>
+      </section>
+
+      <!-- 实时日志 -->
+      <section class="card hidden" id="log-card">
+        <div class="card-head">
+          <h3>运行日志</h3>
+          <span class="status" id="status-tag">pending</span>
+        </div>
+        <pre class="log-box" id="log"></pre>
+      </section>
+
+      <section class="card hidden error" id="error-card">
+        <h3>错误</h3>
+        <pre id="error-msg"></pre>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <small>YOLO26-pose 17 点 → OpenPose 18 点（含 neck） → ST-GCN 14 类动作分类 · Flask + 原生 JS 无前端框架</small>
+  </footer>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

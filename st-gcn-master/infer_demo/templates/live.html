@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实时检测 · YOLO + KNN</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ range(1, 99999) | random }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🎥</div>
+      <div>
+        <div class="title">实时动作识别</div>
+        <div class="subtitle">边播边推骨架 + 累积 KNN 模板匹配</div>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <div class="mode-tabs">
+        <a href="/" class="mode-tab">离线检测</a>
+        <a href="/live" class="mode-tab active">实时检测</a>
+        <a href="/vlm" class="mode-tab">VLM 评估</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout live-layout">
+    <aside class="panel">
+      <section class="card">
+        <h3>输入视频</h3>
+        <div class="tabs">
+          <button class="tab active" type="button" data-tab="upload">上传视频</button>
+          <button class="tab" type="button" data-tab="path">服务器路径</button>
+        </div>
+        <div class="tab-panel" id="tab-upload">
+          <div class="file-zone" id="file-zone">
+            <input type="file" id="live-file" class="visually-hidden"
+                   accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v">
+            <label for="live-file" class="file-drop" id="file-drop">
+              <span class="file-drop-icon">🎬</span>
+              <span class="file-drop-title">点击或拖拽上传视频</span>
+              <span class="file-drop-hint">支持 mp4 / webm / mov（推荐 H.264 mp4）</span>
+            </label>
+            <div class="file-name" id="file-name" hidden>
+              <span class="fn-icon">✅</span>
+              <span class="fn-text"></span>
+              <button type="button" class="fn-clear" title="重新选择">✕</button>
+            </div>
+          </div>
+        </div>
+        <div class="tab-panel hidden" id="tab-path">
+          <input type="text" id="live-path" class="input" placeholder="绝对路径">
+        </div>
+        <div class="live-status" id="live-status">未连接</div>
+      </section>
+
+      <section class="card">
+        <h3>检测状态</h3>
+        <div class="live-phase" id="live-phase-bar">
+          <div class="phase-text">缓冲中</div>
+          <div class="phase-bar"><div class="phase-fill" id="phase-fill"></div></div>
+          <div class="phase-detail" id="phase-detail">0 / 300 帧</div>
+        </div>
+        <div class="live-stat-row">
+          <span class="live-stat-label">已上传帧数</span>
+          <span class="live-stat-val" id="live-frame-count">0</span>
+        </div>
+        <div class="live-stat-row">
+          <span class="live-stat-label">实际推理 FPS</span>
+          <span class="live-stat-val" id="live-fps">0</span>
+        </div>
+        <div class="live-stat-row">
+          <span class="live-stat-label">下次滑动推理</span>
+          <span class="live-stat-val" id="live-next-infer">—</span>
+        </div>
+        <button type="button" class="primary" id="live-reset" style="margin-top:14px">
+          <span class="btn-text">↻ 重新开始累积</span>
+        </button>
+      </section>
+
+      <section class="card">
+        <h3>参数</h3>
+        <label>推理方法
+          <select id="live-method" class="input">
+            <option value="stgcn">ST-GCN (满 300 帧后每 30 帧滑动)</option>
+            <option value="knn">KNN (同样累积到 300 帧)</option>
+            <option value="both">综合</option>
+          </select>
+        </label>
+        <label>推理间隔 (ms) <input type="number" id="live-interval" value="100" min="30" max="500" step="10" class="input"></label>
+        <label>YOLO 置信度 <input type="number" id="live-conf" value="0.25" min="0.05" max="0.95" step="0.05" class="input"></label>
+        <p class="muted" style="font-size: 12px; margin-top: 8px">
+          方案：前 300 帧只累积骨架什么都不做，等累积够 300 帧后跑 ST-GCN（每 30 帧滑动窗口更新）。视频 buffer 阶段（约 10s）显示"缓冲中"。
+        </p>
+      </section>
+    </aside>
+
+    <section class="main-area">
+      <div class="card live-stage">
+        <div class="live-video-wrap" id="live-video-wrap">
+          <video id="live-video" controls muted loop></video>
+          <canvas id="live-canvas"></canvas>
+          <div class="live-overlay-top" id="live-overlay-top"></div>
+          <div class="live-overlay-bottom">
+            <span class="badge" id="live-fps-badge">FPS 0</span>
+            <span class="badge" id="live-phase-badge">缓冲中</span>
+          </div>
+          <div class="live-empty" id="live-empty">
+            <div class="placeholder-icon">📂</div>
+            <div class="placeholder-title">加载视频后开始实时检测</div>
+            <div class="placeholder-hint">支持上传视频 或 粘贴服务器路径</div>
+          </div>
+          <!-- 用户第一次点击后才能自动播放（浏览器策略） -->
+          <div class="live-start hidden" id="live-start">
+            <div class="start-card">
+              <div class="start-icon">▶</div>
+              <div class="start-title">点击开始实时检测</div>
+              <div class="start-hint">浏览器要求用户交互后才能自动播放视频</div>
+            </div>
+          </div>
+          <!-- warming 阶段：右上角小胶囊，不遮挡视频 -->
+          <div class="live-warming hidden" id="live-warming">
+            <span class="warming-dot"></span>
+            <span class="warming-count" id="warming-progress">0 / 300</span>
+            <div class="warming-minibar"><div class="warming-bar-fill" id="warming-bar-fill"></div></div>
+          </div>
+          <!-- 视频加载/播放错误：仅出错时弹出，覆盖视频中央 -->
+          <div class="live-error hidden" id="warming-error">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title">视频未在播放</div>
+            <div class="error-detail" id="warming-error-detail"></div>
+            <button id="warming-replay" type="button">▶ 我已手动播放，重试</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card hidden" id="live-result-card">
+        <h3>当前识别结果</h3>
+        <div class="live-result" id="live-result">—</div>
+        <div class="live-confidence-bar" id="live-conf-bar">
+          <div class="bar-fill" id="live-conf-fill" style="width:0%"></div>
+        </div>
+        <p class="muted" style="font-size: 12px; margin-top: 8px">
+          缓冲够 300 帧后跑首次 ST-GCN；之后每 30 帧滑动窗口更新一次
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer><small>实时检测：YOLO pose 单帧 + KNN k=1 累积缓冲 · Flask + 原生 JS</small></footer>
+
+<script src="{{ url_for('static', filename='live.js') }}?v={{ range(1, 99999) | random }}"></script>
+</body>
+</html>
