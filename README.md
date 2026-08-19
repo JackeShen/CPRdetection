@@ -133,21 +133,28 @@ CPROldshen/
 
 ---
 
-## 9. 模型权重获取（不入库，clone 后需自行放置）
+## 9. 模型权重（Git LFS 分发）
 
-两个运行必需的 `.pt` 权重均被 `.gitignore` 排除（规则 `*.pt`），**不随 GitHub 仓库分发**。clone 后需手动获取并放置到 `app.py` 写死的路径：
+两个运行必需的 `.pt` 权重以 **Git LFS 对象** 随仓库分发（`.gitattributes` 规则 `*.pt filter=lfs`）。clone 后执行一次即可拉取全部权重：
 
-| 权重 | 大小 | 放置路径（相对仓库根） | 获取方式 |
-|---|---|---|---|
-| `yolo26m-pose.pt` | 47M | `ultralytics-main/pose/yolo26m-pose.pt` | ultralytics 官方权重：`pip install ultralytics` 后执行 `python -c "from ultralytics import YOLO; YOLO('yolo26m-pose.pt')"` 自动下载，或从 ultralytics 官方 Release 获取 |
-| `epoch30_model.pt` | 12M | `st-gcn-master/work_dir/recognition/my_dataset/ST_GCN/epoch30_model.pt` | 本项目 ST-GCN **训练产物（非公开）**：由交接人线下提供；或按 `extract_pipeline/` + `config/st_gcn/` 流程自行重训 |
+```bash
+git lfs install
+git lfs pull
+```
 
-> KNN 数据（`data/my_dataset/out/*.npy/.pkl`，约 7M）**已入库**，clone 后无需额外操作即可跑 `/live` 的骨架/类别部分（缺权重时仅模型加载失败）。
+| 权重 | 大小 | 放置路径（相对仓库根，已写死在 `app.py`） |
+|---|---|---|
+| `yolo26m-pose.pt` | 47M | `ultralytics-main/pose/yolo26m-pose.pt` |
+| `epoch30_model.pt` | 12M | `st-gcn-master/work_dir/recognition/my_dataset/ST_GCN/epoch30_model.pt` |
+
+> - `yolo26m-pose.pt` 亦可用 ultralytics 官方方式获取：`pip install ultralytics` 后 `python -c "from ultralytics import YOLO; YOLO('yolo26m-pose.pt')"` 自动下载。
+> - `epoch30_model.pt` 为 ST-GCN 训练产物，重训流程见 `extract_pipeline/` + `config/st_gcn/`。
+> - KNN 数据（`data/my_dataset/out/*.npy/.pkl`，约 7M）为普通文件**已入库**，clone 后无需额外操作即可跑 `/live`。
 
 ---
 
 ## 10. GitHub 仓库说明
 
-- 仓库已用顶层 `.gitignore` 排除：`mydata/`(10G)、`**/outputs/`(推理产物 1.8G)、`**/*.mp4`、`*.pt`(权重)、`_redundant_review_20260819/`(本地归档)、`__pycache__`/`*.py[cod]`、`.ultralytics_config/`。
+- 仓库用顶层 `.gitignore` 排除：`mydata/`(10G)、`**/outputs/`(推理产物 1.8G)、`**/*.mp4`、`_redundant_review_20260819/`(本地归档)、`__pycache__`/`*.py[cod]`、`.ultralytics_config/`、`.workbuddy/`。模型权重（`*.pt`）经 **Git LFS** 分发（见 §9）。
 - `ultralytics-main/` 与 `st-gcn-master/` 为 vendored 上游库（YOLO / ST-GCN），保留其自带 LICENSE / README；本项目改动集中在 `st-gcn-master/infer_demo/`、`extract_pipeline/`、`ultralytics-main/pose/`（`pose_estimate.py`、`ui/pose_ui.py`）。
-- 提交策略：常规 `git add . && git commit` 即可，权重/数据不会进暂存；如后续想分发权重，建议走 GitHub Releases 或 Git LFS。
+- 提交策略：常规 `git add . && git commit && git push` 即可；`*.pt` 由 LFS 跟踪（需 `git lfs install` 后推送），数据/产物不会进暂存。
