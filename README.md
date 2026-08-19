@@ -1,4 +1,6 @@
-# CPR-Coach 实时动作识别演示系统 · 实习交接文档
+# CPR-Coach 实时动作识别演示系统 
+<img width="1890" height="849" alt="屏幕截图 2026-08-18 111345" src="https://github.com/user-attachments/assets/b8a868f6-02a4-4bdc-ad3a-6df15af7d46a" />
+
 
 > 项目目标：复现 arXiv 2309.11718（CPR-Coach），基于 **ST-GCN 骨骼动作识别** + **YOLO 姿态估计** + **VLM 单图分类**，构建 14 类 CPR（心肺复苏）错误动作实时检测 Web 演示。
 > 本文件为**唯一项目说明文档**。上游 ST-GCN 模型原始说明（`OLD_README.md` / `README.md`）已摘要于本文档；完整原文保留在本地归档目录 `_redundant_review_20260819/`（**不入库**，仅本机留存）。
